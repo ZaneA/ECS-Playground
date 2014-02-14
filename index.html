@@ -1,0 +1,428 @@
+<html>
+	<head>
+		<title>Entity Component System</title>
+	</head>
+	<body>
+    <h1>Entity Component System</h1>
+
+    <p>
+      Playground for learning the Entity Component System pattern.
+      Assets are "Platformer graphics (Deluxe) by Kenney Vleugels (www.kenney.nl)", thanks Kenney!
+    </p>
+
+    <canvas id="view" width="800" height="500"></canvas>
+
+    <h2>Entities</h2>
+    <pre><ul id="entities"></ul></pre>
+
+    <script>
+    (function () {
+      //
+      // Renderer
+      //
+
+      function Renderer() {
+        var self = this;
+
+        var canvasElement = document.getElementById('view');
+
+        this.canvas = canvasElement.getContext('2d');
+        this.width = canvasElement.width;
+        this.height = canvasElement.height;
+
+        // Load / cache sprites
+        this.spriteCache = {};
+
+        this.sprite = function (url) {
+          if (this.spriteCache[url]) {
+            return this.spriteCache[url];
+          }
+
+          var img = document.createElement('img');
+          img.src = url;
+
+          this.spriteCache[url] = img;
+
+          return this.spriteCache[url];
+        };
+
+        // Capture mouse events
+        this.mouseX = 0;
+        this.mouseY = 0;
+
+        canvasElement.addEventListener('mousemove', function (ev) {
+          var rect = this.getBoundingClientRect();
+
+          self.mouseX = ev.clientX - rect.left;
+          self.mouseY = ev.clientY - rect.top;
+        }, false);
+      }
+
+      var renderer = new Renderer();
+
+      //
+      // Entity Component System
+      //
+
+      // World
+
+      var world = {
+        entities: [],
+        systems: [],
+
+        nowTime: 1,
+        lastTime: 0,
+        delta: 1,
+
+        // This should be cached / updated when an entity is added
+        getEntities: function (components) {
+          var entities = [];
+
+          for (var i = 0; i < this.entities.length; i++) {
+            var hasAll = true;
+
+            for (var j = 0; j < components.length; j++) {
+              if (!this.entities[i].has(components[j])) {
+                hasAll = false;
+              }
+            }
+
+            if (hasAll) {
+              entities.push(world.entities[i]);
+            }
+          }
+
+          return entities;
+        }
+      };
+
+      // Entities
+
+      function Entity() {
+        this.components = [];
+
+        this.add = function (component) {
+          this.components[component.name] = component;
+        };
+
+        this.has = function (name) {
+          if (typeof name === 'string') {
+            return !!this.components[name];
+          }
+
+          if (typeof name === 'object') {
+            var hasAll = 0;
+
+            for (var key in name) {
+              if (name.hasOwnProperty(key))
+                hasAll++;
+
+              for (var component in this.components) {
+                if (this.components[component][key] && this.components[component][key] == name[key]) {
+                  hasAll--;
+                }
+              }
+            }
+
+            if (hasAll == 0)
+              return true;
+          }
+
+          return false;
+        };
+
+        this.get = function (name, callback) {
+          if (callback && this.components[name]) {
+            return callback(this.components[name]);
+          }
+
+          return this.components[name];
+        };
+      }
+
+      // Systems
+
+      function System(components, callback) {
+        this.update = function (world) {
+          var entities = world.getEntities(components);
+
+          for (var i = 0; i < entities.length; i++) {
+            callback(entities[i]);
+          }
+        };
+      }
+
+      //
+      // Entities
+      //
+
+      var player = new Entity();
+      player.add({ name: 'tag', tag: 'player' });
+      player.add({ name: 'health', health: 100 });
+      player.add({ name: 'sprite', url: 'assets/Player/p1_front.png' });
+      player.add({ name: 'position', x: 100, y: 100 });
+      player.add({ name: 'mouse-input', damping: 0.002 });
+      window.player = player;
+
+      var enemy = new Entity();
+      enemy.add({ name: 'health', health: 100 });
+      enemy.add({ name: 'sprite', url: 'assets/Enemies/flyFly1.png' });
+      enemy.add({ name: 'position', x: 0, y: 0, rotation: 0 });
+      enemy.add({ name: 'chase', tag: 'player', speed: 0.001 });
+      enemy.add({ name: 'velocity', x: 0, y: 0, rotation: 0 });
+      enemy.add({ name: 'sine', period: 0.02, amplitude: 0.001, x: false, y: false, rotation: true });
+
+      var hudHeart = new Entity();
+      hudHeart.add({ name: 'tag', tag: 'hud-heart' });
+      hudHeart.add({ name: 'sprite', url: 'assets/HUD/hud_heartFull.png' });
+      hudHeart.add({ name: 'position', x: 30, y: 30 });
+
+      var cloud = new Entity();
+      cloud.add({ name: 'sine', period: 0.001, amplitude: 0.01, x: false, y: true, rotation: false });
+      cloud.add({ name: 'sprite', url: 'assets/Items/cloud1.png' });
+      cloud.add({ name: 'position', x: renderer.width, y: 200 });
+      cloud.add({ name: 'velocity', x: -0.02, y: 0 });
+
+      var cloud2 = new Entity();
+      cloud2.add({ name: 'sine', period: -0.001, amplitude: 0.01, x: false, y: true, rotation: false });
+      cloud2.add({ name: 'sprite', url: 'assets/Items/cloud2.png' });
+      cloud2.add({ name: 'position', x: 200, y: 400 });
+      cloud2.add({ name: 'velocity', x: -0.03, y: 0 });
+
+      // Add entities to world
+      world.entities.push(cloud);
+      world.entities.push(cloud2);
+      world.entities.push(player);
+      world.entities.push(enemy);
+      world.entities.push(hudHeart);
+
+      //
+      // Systems
+      //
+
+      // Just render a background in the canvas
+      var baseRendererSystem = new System([], function () {
+        renderer.canvas.fillStyle = '#d0f4f7';
+        renderer.canvas.fillRect(0, 0, renderer.width, renderer.height);
+      });
+
+      // Render sprites
+      var spriteRendererSystem = new System(['sprite', 'position'], function (entity) {
+        // Get references to the components
+        var sprite = entity.get('sprite');
+        var position = entity.get('position');
+
+        // If this entity has a health component then set the opacity based on health
+        entity.get('health', function (health) {
+          renderer.canvas.globalAlpha = health.health / 100.0;
+        });
+
+        renderer.canvas.translate(position.x, position.y);
+
+        if (position.rotation) {
+          renderer.canvas.rotate(position.rotation);
+        }
+
+        var img = renderer.sprite(sprite.url);
+        renderer.canvas.drawImage(img, -img.width * 0.5, -img.height * 0.5);
+
+        if (position.rotation) {
+          renderer.canvas.rotate(-position.rotation);
+        }
+
+        renderer.canvas.translate(-position.x, -position.y);
+
+        renderer.canvas.globalAlpha = 1;
+      });
+
+      // Render text
+      var textRendererSystem = new System(['text', 'position'], function (entity) {
+        var text = entity.get('text');
+        var position = entity.get('position');
+
+        renderer.canvas.fillStyle = text.color;
+        renderer.canvas.font = text.font;
+        renderer.canvas.fillText(text.text, position.x, position.y);
+      });
+
+      // Move entity toward mouse
+      var mouseInputSystem = new System(['mouse-input', 'position'], function (entity) {
+        var pos = entity.get('position');
+        var mouseInput = entity.get('mouse-input');
+
+        pos.x = pos.x + ((renderer.mouseX - pos.x) * mouseInput.damping) * world.delta;
+        pos.y = pos.y + ((renderer.mouseY - pos.y) * mouseInput.damping) * world.delta;
+      });
+
+      // Chase the mouse cursor
+      // Right now this is the same as above but it should really chase an entity
+      var chaseSystem = new System(['chase', 'position'], function (entity) {
+        var pos = entity.get('position');
+        var chase = entity.get('chase');
+
+        var chaseEntity = world.getEntities([{ name: 'tag', tag: chase.tag }, 'position'])[0];
+
+        if (chaseEntity) {
+          var newPos = chaseEntity.get('position');
+        } else {
+          var newPos = { x: renderer.width * 0.5, y: renderer.height * 0.5 };
+        }
+
+        pos.x = pos.x + ((newPos.x - pos.x) * chase.speed) * world.delta;
+        pos.y = pos.y + ((newPos.y - pos.y) * chase.speed) * world.delta;
+      });
+
+      // Apply velocities
+      var velocitySystem = new System(['velocity', 'position'], function (entity) {
+        var velocity = entity.get('velocity');
+        var position = entity.get('position');
+
+        if (velocity.x) position.x += velocity.x * world.delta;
+        if (velocity.y) position.y += velocity.y * world.delta;
+        if (velocity.rotation) position.rotation += velocity.rotation * world.delta;
+
+        // Wrap at edges
+        if (position.x < 0) position.x = renderer.width;
+        if (position.x > renderer.width) position.x = 0;
+        if (position.y < 0) position.y = renderer.height;
+        if (position.y > renderer.height) position.y = 0;
+      });
+
+      var sineSystem = new System(['sine', 'velocity'], function (entity) {
+        var sine = entity.get('sine');
+        var velocity = entity.get('velocity');
+
+        var amount = Math.sin(world.nowTime * sine.period) * sine.amplitude;
+
+        if (sine.x) velocity.x = amount;
+        if (sine.y) velocity.y = amount;
+        if (sine.rotation) velocity.rotation = amount;
+      });
+
+      // Explodes an entity when their health reaches 0
+      var explosionSystem = new System(['health', 'sprite', 'position'], function (entity) {
+        var health = entity.get('health');
+        var sprite = entity.get('sprite');
+        var position = entity.get('position');
+
+        if (health.health <= 0) {
+          entity.add({ name: 'remove', after: 0 });
+
+          var explosion = new Entity();
+          explosion.add({ name: 'position', x: position.x, y: position.y, rotation: 0 });
+          explosion.add({ name: 'velocity', rotation: 0.01 });
+          explosion.add({ name: 'sprite', url: 'assets/Items/fireball.png' });
+          explosion.add({ name: 'remove', after: 1 });
+          world.entities.push(explosion);
+        }
+      });
+
+      // Display game over and remove player when health reaches 0
+      var playerDeathSystem = new System([{ name: 'tag', tag: 'player' }, 'health'], function (entity) {
+        var health = entity.get('health');
+
+        var hudHeart = world.getEntities([{ name: 'tag', tag: 'hud-heart' }])[0];
+
+        if (hudHeart) {
+          var sprite = hudHeart.get('sprite');
+
+          if (health.health >= 75) {
+            sprite.url = 'assets/HUD/hud_heartFull.png';
+          } else if (health.health >= 25) {
+            sprite.url = 'assets/HUD/hud_heartHalf.png';
+          } else {
+            sprite.url = 'assets/HUD/hud_heartEmpty.png';
+          }
+        }
+
+        if (health.health <= 0) {
+          // Remove player
+          entity.add({ name: 'remove', after: 3 });
+
+          var gameOver = new Entity();
+          gameOver.add({ name: 'position', x: 100, y: 50 });
+          gameOver.add({ name: 'text', text: 'Game Over', font: '42px Arial', color: '#000' });
+          gameOver.add({ name: 'remove', after: 6 });
+          world.entities.push(gameOver);
+        }
+      });
+
+      // Removes an entity after some time has passed
+      var removeSystem = new System(['remove'], function (entity) {
+        var remove = entity.get('remove');
+
+        var time = (new Date().getTime());
+
+        if (!remove['_finish']) {
+          remove._finish = time + remove.after * 1000;
+        }
+
+        if (remove._finish <= time) {
+          // Hack to remove entity
+          for (var j = 0; j < world.entities.length; j++) {
+            if (world.entities[j] == entity) {
+              world.entities.splice(j, 1);
+            }
+          }
+        }
+      });
+
+      // Add systems to the world
+      // Order can matter if systems are updating entities
+      world.systems.push(mouseInputSystem);
+      world.systems.push(chaseSystem);
+      world.systems.push(velocitySystem);
+      world.systems.push(sineSystem);
+      world.systems.push(playerDeathSystem);
+      world.systems.push(explosionSystem);
+      world.systems.push(removeSystem);
+      world.systems.push(baseRendererSystem);
+      world.systems.push(spriteRendererSystem);
+      world.systems.push(textRendererSystem);
+
+      //
+      // Game loop
+      //
+
+      // Set player health to 50% after 2 seconds
+      setTimeout(function () { player.components.health.health = 50; }, 2000);
+
+      // Set player health to 0% after 4 seconds
+      setTimeout(function () { player.components.health.health = 0; }, 4000);
+
+      var lastUpdateDOM = 0;
+      function loop(time) {
+        // Update systems
+        world.delta = time - world.lastTime;
+        world.lastTime = world.nowTime;
+        world.nowTime = time;
+
+        for (var i = 0; i < world.systems.length; i++) {
+          world.systems[i].update(world);
+        }
+
+        if (lastUpdateDOM + 500 < time) {
+          lastUpdateDOM = time;
+
+          var entitiesList = document.getElementById('entities');
+          entitiesList.innerHTML = '';
+
+          for (var i = 0; i < world.entities.length; i++) {
+            var entityItem = document.createElement('li');
+            var componentString = '';
+            for (var component in world.entities[i].components) {
+              componentString += JSON.stringify(world.entities[i].components[component]) + "\n";
+            }
+            entityItem.innerHTML = componentString;
+            entitiesList.appendChild(entityItem);
+          }
+        }
+
+        window.requestAnimationFrame(loop);
+      }
+
+      window.requestAnimationFrame(loop);
+    })();
+    </script>
+  </body>
+</html>
